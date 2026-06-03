@@ -1,0 +1,8 @@
+version: "3"
+agent:
+  authtoken: YOUR_NGROK_AUTHTOKEN  # 💡 如果這裡原本有你的 Token，請保留它
+tunnels:
+  fruit_shop:
+    proto: http
+    addr: 8501
+    domain: uncrown-pacific-sprout.ngrok-free.dev
