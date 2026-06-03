@@ -1,0 +1,15 @@
+train: /Users/albert/Documents/Fruit classification dataset/images/train
+val: /Users/albert/Documents/Fruit classification dataset/images/val
+
+nc: 9  # 🚀 阿伯真正的 9 種水果大軍！
+
+names:
+  0: apple
+  1: avocado
+  2: banana
+  3: guava
+  4: kiwi
+  5: mango
+  6: orange
+  7: peach
+  8: pineapple
