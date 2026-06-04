@@ -32,7 +32,6 @@
 
 ## 📂 專案目錄結構 (Project Structure)
 
-```text
 9FRUIT_DATASET/
 ├── .env                  # 環境變數設定 (資料庫密碼等)
 ├── data.yaml             # YOLO 模型訓練資料集設定檔 (定義 9 種水果類別)
