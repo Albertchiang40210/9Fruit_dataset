@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import base64
 import json
 import pymysql
@@ -15,7 +15,12 @@ from dotenv import load_dotenv
 # ==============================================================================
 load_dotenv()
 
-app = FastAPI()
+# 🚀 【升級點】加上專屬的 Swagger 測試大門標題與說明
+app = FastAPI(
+    title="🍎 AI 影像智慧結帳系統 (大腦 API)",
+    description="資展全班第一名的 AI 結帳系統！負責接收前端影像、YOLOv8 辨識、MySQL 查價與結帳同步。",
+    version="1.0.0"
+)
 
 # 🔴 核心防禦解鎖：全開跨網域（CORS），允許 4G 封包完美打入本機轉發埠口
 app.add_middleware(
@@ -37,18 +42,26 @@ DB_CONFIG = {
 }
 
 # 🚀 載入你的最佳權重模型（請確保權重路徑正確）
-MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt")
+MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt") # 請確定你有 best.pt 或 yolo26m.pt
 model = YOLO(MODEL_PATH)
 
+# 定義前端要傳過來的包裹格式
 class ImagePayload(BaseModel):
-    image: str
-    member_phone: str = None  # 保持相容性，目前皆傳 None
+    image: str = Field(..., description="請傳入 Base64 格式的圖片字串")
+    member_phone: str = Field(None, description="會員電話（選填）")
 
 # ==============================================================================
 # 📡 萬能核心推論接口
 # ==============================================================================
-@app.post("/api/upload_shot")
+@app.post("/api/upload_shot", summary="📷 接收前端照片並執行 YOLO 辨識結帳", tags=["AI 辨識核心"])
 async def upload_shot(payload: ImagePayload):
+    """
+    **運作邏輯：**
+    1. 接收前端傳來的 Base64 影像。
+    2. 呼叫 YOLOv8 模型進行特徵辨識。
+    3. 計算水果種類與數量，連線 MySQL 查詢商品單價。
+    4. 將標記結果存入 system_sync 資料表，觸發前端大螢幕更新。
+    """
     try:
         # 1. 影像 Base64 數據解碼
         img_data = base64.b64decode(payload.image)
@@ -101,6 +114,7 @@ async def upload_shot(payload: ImagePayload):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
+@app.get("/health", summary="🩺 系統健康檢查", tags=["系統監控"])
 def health_check():
-    return {"status": "ready"}
+    """用來確認 FastAPI 伺服器與 YOLO 模型是否已經成功開機並準備好接收圖片。"""
+    return {"status": "ready", "message": "大腦已上線，隨時可以開始辨識！"}
