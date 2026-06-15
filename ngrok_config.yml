@@ -1,6 +1,6 @@
 version: "3"
 agent:
-  authtoken: YOUR_NGROK_AUTHTOKEN  # 💡 如果這裡原本有你的 Token，請保留它
+  authtoken: 3EG2KA4IMY25jTsLWI1Bx5Gt0Au_tBGjQFubmhsASYCTc7hW  # 💡 如果這裡原本有你的 Token，請保留它
 tunnels:
   fruit_shop:
     proto: http
