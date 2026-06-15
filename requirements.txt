@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+numpy
+pydantic
+pymysql
+ultralytics
+opencv-python-headless
+python-dotenv

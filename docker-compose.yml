@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # 1. MySQL 資料庫服務
+  fruit_db:
+    image: mysql:8.0
+    container_name: fruit_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: your_password_here  # 填入你想設定的資料庫密碼
+      MYSQL_DATABASE: fruit_store            # 自動建立的資料庫名稱
+    ports:
+      - "3307:3306"
+    volumes:
+      - fruit_db_data:/var/lib/mysql
+
+  # 2. FastAPI 後端 + AI 推理
+  fruit_backend:
+    build: .
+    container_name: fruit_api_service
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      # 讓你的 python-dotenv 或 db_manager.py 可以讀取資料庫連線字串
+      # 注意：主機名要填寫上面定義的服務名稱 "fruit_db"
+      - DATABASE_URL=mysql+pymysql://root:your_password_here@fruit_db:3306/fruit_store
+    depends_on:
+      - fruit_db
+
+volumes:
+  fruit_db_data:
