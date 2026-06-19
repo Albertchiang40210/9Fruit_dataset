@@ -6,3 +6,6 @@ pymysql
 ultralytics
 opencv-python-headless
 python-dotenv
+streamlit
+pandas
+requests
