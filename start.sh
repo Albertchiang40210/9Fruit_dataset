@@ -23,5 +23,3 @@ echo "------------------------------------------------------------------"
 streamlit run boss_final.py --server.port 8501
 
 #sh start.sh 一鍵啟動 
-#後台帳密：boss123 boss789 老闆
-         #staff01 staff789 員工

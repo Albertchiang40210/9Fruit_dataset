@@ -18,8 +18,10 @@ from auth import render_login_interface
 # ==============================================================================
 load_dotenv()
 
-FASTAPI_PORT = os.getenv("FASTAPI_PORT", "8888")
-FASTAPI_API_URL = f"http://127.0.0.1:{FASTAPI_PORT}/api/upload_shot"
+# 👇 這樣寫，搬進 Docker 後就會自動走內部通道找 fruit_backend 的 8000 埠號
+FASTAPI_HOST = os.getenv("FASTAPI_HOST", "fruit_backend")
+FASTAPI_PORT = os.getenv("FASTAPI_PORT", "8000")
+FASTAPI_API_URL = f"http://{FASTAPI_HOST}:{FASTAPI_PORT}/api/upload_shot"
 
 # ==============================================================================
 # 1. ⚙️ Streamlit 核心視覺組態
@@ -46,19 +48,22 @@ FRUIT_CH_NAMES = {
 }
 
 # ==============================================================================
-# 2. 📊 資料庫核心連線組態
+# 2. 📊 資料庫核心連線組態 (全容器化版本)
 # ==============================================================================
+import os # 確保最上面有 import os
+
 DB_CONFIG = {
-    'host': os.getenv("DB_HOST", "127.0.0.1"),
-    'port': int(os.getenv("DB_PORT", 3306)),
+    'host': os.getenv("DB_HOST", "fruit_db"),       # 👈 住進 Docker 後，直接找 fruit_db
+    'port': int(os.getenv("DB_PORT", 3306)),        # 👈 改回內部預設的 3306 埠號
     'user': os.getenv("DB_USER", "root"),
-    'password': os.getenv("DB_PASSWORD"),  
-    'database': os.getenv("DB_DATABASE", "fruittest"),
+    'password': os.getenv("DB_PASSWORD", "P@ssw0rd"),       
+    'database': os.getenv("DB_DATABASE", "fruit_store"),    
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
     'connect_timeout': 2  
 }
 
+# 1. 先讓 Python 認識這個函式（原本在第 68 行）
 def check_db_connected():
     try:
         conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
@@ -66,6 +71,11 @@ def check_db_connected():
         cursor.close(); conn.close()
         return True
     except: return False
+
+
+# 2. 移到這裡！函式定義完之後，才執行呼叫與照妖鏡
+#st.write(f" debug 測試 - 目前嘗試連線的 Host: {DB_CONFIG['host']}")
+#st.write(f" debug 測試 - 目前嘗試連線的 Port: {DB_CONFIG['port']}")
 
 db_connected = check_db_connected()
 

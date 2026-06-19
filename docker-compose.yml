@@ -1,32 +1,54 @@
 version: '3.8'
 
 services:
-  # 1. MySQL 資料庫服務
+  # 1. 資料庫
   fruit_db:
     image: mysql:8.0
     container_name: fruit_mysql
     restart: "no"
     environment:
-      MYSQL_ROOT_PASSWORD: your_password_here  # 填入你想設定的資料庫密碼
-      MYSQL_DATABASE: fruit_store            # 自動建立的資料庫名稱
+      MYSQL_ROOT_PASSWORD: P@ssw0rd
+      MYSQL_DATABASE: fruit_store
+      TZ: Asia/Taipei                      # 👈 注意：沒有橫線！冒號後面有一個空格
     ports:
       - "3307:3306"
     volumes:
       - fruit_db_data:/var/lib/mysql
 
-  # 2. FastAPI 後端 + AI 推理
+  # 2. 後端大腦
   fruit_backend:
     build: .
     container_name: fruit_api_service
     restart: "no"
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      # 讓你的 python-dotenv 或 db_manager.py 可以讀取資料庫連線字串
-      # 注意：主機名要填寫上面定義的服務名稱 "fruit_db"
-      - DATABASE_URL=mysql+pymysql://root:your_password_here@fruit_db:3306/fruit_store
+      DATABASE_URL: mysql+pymysql://root:P@ssw0rd@fruit_db:3306/fruit_store  # 👈 順便把橫線拿掉，改成冒號
+      TZ: Asia/Taipei                      # 👈 沒有橫線，跟上面對齊
     depends_on:
       - fruit_db
+
+# 3. 前端網頁
+  fruit_web:
+    build: .
+    container_name: fruit_streamlit_ui
+    restart: "no"
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: fruit_db
+      DB_PORT: 3306
+      FASTAPI_HOST: fruit_backend          # 👈 核心關鍵：一定要補上這行！
+      FASTAPI_PORT: 8000                   # 👈 順便強制指定大腦的 Port 為 8000
+      TZ: Asia/Taipei
+    command: streamlit run boss_final.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      - fruit_db
+      - fruit_backend
 
 volumes:
   fruit_db_data:
