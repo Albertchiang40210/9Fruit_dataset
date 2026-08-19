@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pymysql  
 import time
 from datetime import datetime
 import socket  
@@ -12,6 +11,7 @@ import base64
 import os                      
 from dotenv import load_dotenv 
 from auth import render_login_interface 
+import db_manager
 
 # ==============================================================================
 # 0. 🔐 初始化環境變數與單天線一體化網關
@@ -52,78 +52,30 @@ FRUIT_CH_NAMES = {
 # ==============================================================================
 import os # 確保最上面有 import os
 
-DB_CONFIG = {
-    'host': os.getenv("DB_HOST", "fruit_db"),       # 👈 住進 Docker 後，直接找 fruit_db
-    'port': int(os.getenv("DB_PORT", 3306)),        # 👈 改回內部預設的 3306 埠號
-    'user': os.getenv("DB_USER", "root"),
-    'password': os.getenv("DB_PASSWORD", "P@ssw0rd"),       
-    'database': os.getenv("DB_DATABASE", "fruit_store"),    
-    'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor,
-    'connect_timeout': 2  
-}
-
-# 1. 先讓 Python 認識這個函式（原本在第 68 行）
-def check_db_connected():
-    try:
-        conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM products")
-        cursor.close(); conn.close()
-        return True
-    except: return False
-
-
-# 2. 移到這裡！函式定義完之後，才執行呼叫與照妖鏡
-#st.write(f" debug 測試 - 目前嘗試連線的 Host: {DB_CONFIG['host']}")
-#st.write(f" debug 測試 - 目前嘗試連線的 Port: {DB_CONFIG['port']}")
-
-db_connected = check_db_connected()
+# 1. 檢查資料庫連線
+db_connected = db_manager.check_db_connected()
 
 def fetch_real_products():
-    conn = pymysql.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, price, stock FROM products")
-    rows = cursor.fetchall(); cursor.close(); conn.close()
-    return {row['name']: {'price': row['price'], 'stock': row['stock']} for row in rows}
+    return db_manager.get_all_products()
 
 def fetch_real_logs():
-    conn = pymysql.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute("SELECT timestamp as 時間, name as 品項, action_type as 類型, qty as 數量, note as 備註 FROM stock_logs ORDER BY id DESC LIMIT 10")
-    rows = cursor.fetchall(); cursor.close(); conn.close()
-    for row in rows: row['品項'] = FRUIT_CH_NAMES.get(row['品項'], row['品項'])
+    rows = db_manager.get_recent_logs(10)
+    for row in rows: 
+        row['品項'] = FRUIT_CH_NAMES.get(row['品項'], row['品項'])
     return rows
 
 def fetch_today_revenue():
     if not db_connected: return 0
-    try:
-        conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        cursor.execute("SELECT note FROM stock_logs WHERE timestamp LIKE %s AND action_type='📤 交易完成'", (f"{today_str}%",))
-        rows = cursor.fetchall(); cursor.close(); conn.close()
-        calculated_revenue = 0
-        for row in rows:
-            note_str = row['note']
-            if "金額:$" in note_str:
-                try:
-                    part = note_str.split("金額:$")[1]
-                    price_val = int(part.split(" |")[0])
-                    calculated_revenue += price_val
-                except: pass
-        return calculated_revenue
-    except: return 0
+    return db_manager.get_today_revenue()
 
 # ==============================================================================
 # 🔄 核心狀態機同步讀取
 # ==============================================================================
-if db_connected:
     DB_PRODUCTS = fetch_real_products()
     DB_LOGS = fetch_real_logs()
     TODAY_REVENUE = fetch_today_revenue()
     
-    conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-    cursor.execute("SELECT * FROM system_sync WHERE sync_key='main'")
-    sync_status = cursor.fetchone(); cursor.close(); conn.close()
+    sync_status = db_manager.get_system_sync()
     
     if sync_status:
         is_frozen = bool(sync_status.get('is_frozen', 0))
@@ -212,14 +164,10 @@ else:
                 
             if db_connected:
                 try:
-                    conn_check = pymysql.connect(**DB_CONFIG)
-                    cursor_check = conn_check.cursor()
-                    cursor_check.execute("SELECT is_frozen FROM system_sync WHERE sync_key='main'")
-                    status_now = cursor_check.fetchone()
-                    cursor_check.close(); conn_check.close()
+                    is_frozen_status = db_manager.check_frozen_status()
                     
                     # 只有當手機剛送達 (資料庫為 1，大螢幕還是 0) 的關鍵瞬間，才發射唯一一次重整炮
-                    if status_now and status_now.get('is_frozen', 0) == 1:
+                    if is_frozen_status == 1:
                         st.components.v1.html("""
                             <script>
                                 window.parent.location.reload();
@@ -263,31 +211,22 @@ else:
                     if current_cart and final_total > 0:
                         if btn_col1.button("🏁 確認結帳並列印發票", use_container_width=True, type="primary"):
                             if db_connected:
-                                conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-                                now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                for fk, fq in current_cart.items():
-                                    cursor.execute("UPDATE products SET stock = GREATEST(stock - %s, 0) WHERE name = %s", (fq, fk))
-                                    single_item_total = DB_PRODUCTS.get(fk, {'price': 0})['price'] * fq
-                                    log_note = f"金額:${single_item_total} | 管道:{pay_method}"
-                                    cursor.execute("INSERT INTO stock_logs (timestamp, name, action_type, qty, note) VALUES (%s, %s, %s, %s, %s)", (now_time, fk, '📤 交易完成', f"-{fq}", log_note))
-                                cursor.execute("UPDATE system_sync SET is_frozen=0, cart_json='{}', total_due=0, image_blob=NULL WHERE sync_key='main'")
-                                conn.commit(); cursor.close(); conn.close()
+                                db_manager.process_checkout(current_cart, pay_method)
                             st.balloons(); st.success("🎉 交易成功！"); time.sleep(1.2); st.rerun()
                     else:
                         btn_col1.button("🏁 無法結帳", use_container_width=True, disabled=True)
                     
                     if btn_col2.button("❌ 辨識錯誤，清空重拍", use_container_width=True, type="secondary"):
                         if db_connected:
-                            conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-                            cursor.execute("UPDATE system_sync SET is_frozen=0, cart_json='{}', total_due=0, image_blob=NULL WHERE sync_key='main'")
-                            conn.commit(); cursor.close(); conn.close()
+                            db_manager.reset_system_sync()
                         st.rerun()
                 else:
                     st.markdown("<div style='text-align:center; color:#7f8c8d; padding: 135px 0;'><h2>🧾 點驗明細櫃檯</h2><p>目前空置中。等待顧客掃碼拍照...</p></div>", unsafe_allow_html=True)
 
 # ─── 💻 子分流 B2：分權管理後台 ───
     else:
-        if not render_login_interface(DB_CONFIG, db_connected): st.stop()
+        # DB_CONFIG 已經在 db_manager 內部處理，因此直接傳一個 dummy dict
+        if not render_login_interface({}, db_connected): st.stop()
         user_panel_col, logout_panel_col = st.columns([8, 2])
         user_panel_col.markdown(f"👤 當前在線：**{st.session_state.real_name}** ｜ 權限群組：`{st.session_state.user_role.upper()}`")
         if logout_panel_col.button("🚪 安全登出系統", use_container_width=True, type="secondary"):
@@ -341,9 +280,7 @@ else:
                     new_price = st.number_input("請輸入全新零售價 (TWD)：", min_value=1, value=int(current_p), step=5)
                     if st.button("💾 儲存並同步更新至 MySQL"):
                         if db_connected:
-                            conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-                            cursor.execute("UPDATE products SET price=%s WHERE name=%s", (new_price, target_fruit_price))
-                            conn.commit(); cursor.close(); conn.close()
+                            db_manager.update_product_price(target_fruit_price, new_price)
                             st.success("🎉 價格變更成功！"); time.sleep(0.5); st.rerun()
             
             st.markdown("<br>", unsafe_allow_html=True)
@@ -352,10 +289,7 @@ else:
                     st.markdown("<h3 style='color:#c0392b; margin-top:0;'>🚨 門市閉店交班重置面板</h4>", unsafe_allow_html=True)
                     if st.button("🔄 盤點歸零：重置今日營業額", use_container_width=True, type="secondary"):
                         if db_connected:
-                            conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-                            today_str = datetime.now().strftime("%Y-%m-%d")
-                            cursor.execute("DELETE FROM stock_logs WHERE timestamp LIKE %s AND action_type='📤 交易完成'", (f"{today_str}%",))
-                            conn.commit(); cursor.close(); conn.close()
+                            db_manager.reset_today_revenue()
                             st.toast("🧹 今日營業額已重置歸零！"); time.sleep(0.5); st.rerun()
             
             st.markdown("<br>", unsafe_allow_html=True)
@@ -370,11 +304,14 @@ else:
                 stock_note = st.text_input("異動備註原因：", placeholder="例如：新進貨...")
                 if st.button("📦 確認送出並更新庫存"):
                     if db_connected:
-                        now_time = datetime.now().strftime("%Y-%m-%d %H:%M")
-                        if "📥" in stock_action: final_stock = current_s + change_qty; log_qty, log_type = f"+{change_qty}", "📥 進貨"
-                        else: final_stock = max(current_s - change_qty, 0); log_qty, log_type = f"-{change_qty}", "📤 出貨"
-                        conn = pymysql.connect(**DB_CONFIG); cursor = conn.cursor()
-                        cursor.execute("UPDATE products SET stock=%s WHERE name=%s", (final_stock, target_fruit_stock))
-                        cursor.execute("INSERT INTO stock_logs (timestamp, name, action_type, qty, note) VALUES (%s, %s, %s, %s, %s)", (now_time, target_fruit_stock, log_type, log_qty, stock_note if stock_note else "無"))
-                        conn.commit(); cursor.close(); conn.close()
+                        if "📥" in stock_action: 
+                            final_stock = current_s + change_qty
+                            log_qty, log_type = f"+{change_qty}", "📥 進貨"
+                        else: 
+                            final_stock = max(current_s - change_qty, 0)
+                            log_qty, log_type = f"-{change_qty}", "📤 出貨"
+                        
+                        db_manager.update_product_stock(target_fruit_stock, final_stock)
+                        db_manager.add_stock_log(target_fruit_stock, log_type, log_qty, stock_note if stock_note else "無")
+                        
                         st.success(f"🎉 庫存異動成功！"); time.sleep(0.5); st.rerun()
