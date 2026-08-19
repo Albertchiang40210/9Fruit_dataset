@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import base64
 import json
-import pymysql
+import db_manager
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -31,15 +31,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_CONFIG = {
-    'host': os.getenv("DB_HOST", "127.0.0.1"),
-    'port': int(os.getenv("DB_PORT", 3306)),
-    'user': os.getenv("DB_USER", "root"),
-    'password': os.getenv("DB_PASSWORD"),
-    'database': os.getenv("DB_DATABASE", "fruittest"),
-    'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor
-}
+# 移除寫死的 DB_CONFIG，統一改由 db_manager 接管
+# 快取商品價格，避免每次辨識都去查資料庫
+PRICE_CACHE = {}
+import time
+LAST_CACHE_TIME = 0
+CACHE_TTL = 300  # 300 秒 = 5 分鐘
+
+def get_cached_price_map():
+    global PRICE_CACHE, LAST_CACHE_TIME
+    if not PRICE_CACHE or (time.time() - LAST_CACHE_TIME > CACHE_TTL):
+        try:
+            PRICE_CACHE = db_manager.get_price_list()
+            LAST_CACHE_TIME = time.time()
+        except Exception as e:
+            print(f"Failed to fetch price list: {e}")
+    return PRICE_CACHE
+
 
 # 🚀 載入你的最佳權重模型（請確保權重路徑正確）
 MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt") # 請確定你有 best.pt 或 yolo26m.pt
@@ -85,14 +93,8 @@ async def upload_shot(payload: ImagePayload):
         _, img_encoded = cv2.imencode('.jpg', annotated_img)
         blob_bytes = img_encoded.tobytes()
         
-        # 5. 連動計算 MySQL 總價與存檔
-        conn = pymysql.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        
-        # 查詢目前 MySQL 內的商品單價
-        cursor.execute("SELECT name, price FROM products")
-        product_rows = cursor.fetchall()
-        price_map = {r['name']: r['price'] for r in product_rows}
+        # 5. 從快取取得商品單價並計算總價
+        price_map = get_cached_price_map()
         
         total_due = 0
         for fk, fq in cart.items():
@@ -100,14 +102,12 @@ async def upload_shot(payload: ImagePayload):
             
         # 6. 狀態機冷凍：更新 system_sync，啟動大螢幕自動刷新
         cart_json_str = json.dumps(cart)
-        cursor.execute(
-            "UPDATE system_sync SET is_frozen=1, cart_json=%s, total_due=%s, image_blob=%s WHERE sync_key='main'",
-            (cart_json_str, total_due, blob_bytes)
+        db_manager.update_system_sync(
+            is_frozen=1,
+            cart_json=cart_json_str,
+            total_due=total_due,
+            image_blob=blob_bytes
         )
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
         
         return {"status": "success", "identified": cart, "total_due": total_due}
         
