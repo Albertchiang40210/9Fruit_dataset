@@ -10,3 +10,4 @@ streamlit
 pandas
 requests
 DBUtils
+plotly
