@@ -10,6 +10,7 @@ import requests
 import base64
 import os                      
 from dotenv import load_dotenv 
+import plotly.express as px
 from auth import render_login_interface 
 import db_manager
 
@@ -125,7 +126,9 @@ if is_mobile_client:
                     try:
                         # 🚨 關鍵修正：將原本的 None 改為空字串 ""，完美通過 FastAPI 的 Pydantic 422 嚴格驗證
                         payload = {"image": base64_image, "member_phone": ""}
-                        res = requests.post(FASTAPI_API_URL, json=payload, timeout=15)
+                        api_key = os.getenv("API_KEY", "9fruit-super-secret-key")
+                        headers = {"X-API-Key": api_key}
+                        res = requests.post(FASTAPI_API_URL, json=payload, headers=headers, timeout=15)
                         
                         if res.status_code == 200:
                             st.success("📤 資料傳輸成功！請觀看前方大螢幕。")
@@ -261,6 +264,14 @@ else:
         
         with col_dash_left:
             st.markdown("<h4 style='color:#2c3e50;'>📦 實時庫存與零售價格清單</h4>", unsafe_allow_html=True)
+            
+            # 使用 Plotly 繪製庫存圓餅圖
+            fruit_names = [v for k, v in FRUIT_CH_NAMES.items() if k != 'checkout']
+            fruit_stocks = [DB_PRODUCTS[k]['stock'] for k in FRUIT_CH_NAMES.keys() if k != 'checkout']
+            df_stock = pd.DataFrame({'水果品項': fruit_names, '庫存量': fruit_stocks})
+            fig = px.pie(df_stock, values='庫存量', names='水果品項', title='🛒 當前各品項庫存佔比', hole=0.3)
+            st.plotly_chart(fig, use_container_width=True)
+            
             stock_table = [{"水果代碼": k, "水果品項": v, "當前零售價": f"${DB_PRODUCTS[k]['price']} 元", "現有庫存量": f"{DB_PRODUCTS[k]['stock']} 個"} for k, v in FRUIT_CH_NAMES.items() if k != 'checkout']
             st.table(stock_table)
             st.markdown("<br>", unsafe_allow_html=True)

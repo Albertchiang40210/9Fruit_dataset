@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import base64
@@ -21,6 +22,16 @@ app = FastAPI(
     description="資展全班第一名的 AI 結帳系統！負責接收前端影像、YOLOv8 辨識、MySQL 查價與結帳同步。",
     version="1.0.0"
 )
+
+# 🔐 API Key 設定
+API_KEY_NAME = "X-API-Key"
+API_KEY = os.getenv("API_KEY", "9fruit-super-secret-key")
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header == API_KEY:
+        return api_key_header
+    raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 # 🔴 核心防禦解鎖：全開跨網域（CORS），允許 4G 封包完美打入本機轉發埠口
 app.add_middleware(
@@ -49,9 +60,14 @@ def get_cached_price_map():
     return PRICE_CACHE
 
 
-# 🚀 載入你的最佳權重模型（請確保權重路徑正確）
-MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt") # 請確定你有 best.pt 或 yolo26m.pt
+# 🚀 載入你的最佳權重模型並啟用硬體加速
+MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt")
 model = YOLO(MODEL_PATH)
+import torch
+if torch.backends.mps.is_available():
+    model.to("mps")
+elif torch.cuda.is_available():
+    model.to("cuda")
 
 # 定義前端要傳過來的包裹格式
 class ImagePayload(BaseModel):
@@ -62,7 +78,7 @@ class ImagePayload(BaseModel):
 # 📡 萬能核心推論接口
 # ==============================================================================
 @app.post("/api/upload_shot", summary="📷 接收前端照片並執行 YOLO 辨識結帳", tags=["AI 辨識核心"])
-async def upload_shot(payload: ImagePayload):
+async def upload_shot(payload: ImagePayload, api_key: str = Depends(get_api_key)):
     """
     **運作邏輯：**
     1. 接收前端傳來的 Base64 影像。
