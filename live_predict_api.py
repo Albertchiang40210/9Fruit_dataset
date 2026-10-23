@@ -9,6 +9,9 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import os
+import hmac
+import time
+import torch
 from dotenv import load_dotenv
 
 # ==============================================================================
@@ -25,19 +28,21 @@ app = FastAPI(
 
 # 🔐 API Key 設定
 API_KEY_NAME = "X-API-Key"
-API_KEY = os.getenv("API_KEY", "REDACTED")
+API_KEY = os.getenv("API_KEY")
+if not API_KEY:
+    raise RuntimeError("API_KEY 未設定，請在 .env 中設定（參考 .env.example）")
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
-    if api_key_header == API_KEY:
+    if api_key_header and hmac.compare_digest(api_key_header, API_KEY):
         return api_key_header
     raise HTTPException(status_code=403, detail="Could not validate credentials")
 
 # 🔴 核心防禦解鎖：全開跨網域（CORS），允許 4G 封包完美打入本機轉發埠口
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:8501").split(",")],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,8 +50,8 @@ app.add_middleware(
 # 移除寫死的 DB_CONFIG，統一改由 db_manager 接管
 # 快取商品價格，避免每次辨識都去查資料庫
 PRICE_CACHE = {}
-import time
 LAST_CACHE_TIME = 0
+DEFAULT_PRICE = 35  # 資料庫查無該品項時的備用單價
 CACHE_TTL = 300  # 300 秒 = 5 分鐘
 
 def get_cached_price_map():
@@ -63,7 +68,6 @@ def get_cached_price_map():
 # 🚀 載入你的最佳權重模型並啟用硬體加速
 MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "best.pt")
 model = YOLO(MODEL_PATH)
-import torch
 if torch.backends.mps.is_available():
     model.to("mps")
 elif torch.cuda.is_available():
@@ -72,7 +76,7 @@ elif torch.cuda.is_available():
 # 定義前端要傳過來的包裹格式
 class ImagePayload(BaseModel):
     image: str = Field(..., description="請傳入 Base64 格式的圖片字串")
-    member_phone: str = Field(None, description="會員電話（選填）")
+    member_phone: str = Field("", description="會員電話（選填）")
 
 # ==============================================================================
 # 📡 萬能核心推論接口
@@ -114,7 +118,7 @@ async def upload_shot(payload: ImagePayload, api_key: str = Depends(get_api_key)
         
         total_due = 0
         for fk, fq in cart.items():
-            total_due += price_map.get(fk, 35) * fq
+            total_due += price_map.get(fk, DEFAULT_PRICE) * fq
             
         # 6. 狀態機冷凍：更新 system_sync，啟動大螢幕自動刷新
         cart_json_str = json.dumps(cart)
@@ -127,8 +131,11 @@ async def upload_shot(payload: ImagePayload, api_key: str = Depends(get_api_key)
         
         return {"status": "success", "identified": cart, "total_due": total_due}
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"upload_shot failed: {e}")
+        raise HTTPException(status_code=500, detail="伺服器內部錯誤")
 
 @app.get("/health", summary="🩺 系統健康檢查", tags=["系統監控"])
 def health_check():

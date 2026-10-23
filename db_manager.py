@@ -1,6 +1,9 @@
 import os
 import pymysql
 import json
+import hashlib
+import hmac
+import secrets
 from datetime import datetime
 from dbutils.pooled_db import PooledDB
 from dotenv import load_dotenv
@@ -23,7 +26,7 @@ def get_pool():
             blocking=True,       # 連線池用盡時，是否阻塞等待
             host=os.getenv("DB_HOST", "fruit_db"),
             user=os.getenv("DB_USER", "root"),
-            password=os.getenv("DB_PASSWORD", "REDACTED"),
+            password=os.getenv("DB_PASSWORD", ""),
             database=os.getenv("DB_DATABASE", "fruit_store"),
             port=int(os.getenv("DB_PORT", 3306)),
             charset='utf8mb4',
@@ -123,6 +126,7 @@ def init_db():
             cursor.execute("SELECT COUNT(*) AS c FROM system_sync WHERE sync_key='main'")
             if cursor.fetchone()['c'] == 0:
                 cursor.execute("INSERT INTO system_sync (sync_key, is_frozen, cart_json, total_due) VALUES ('main', 0, '{}', 0)")
+        init_users_table()
     except Exception as e:
         print(f"init_db failed: {e}")
 
@@ -240,3 +244,51 @@ def check_frozen_status():
         cursor.execute("SELECT is_frozen FROM system_sync WHERE sync_key='main'")
         row = cursor.fetchone()
         return row['is_frozen'] if row else 0
+
+# ==============================================================================
+# Users / Authentication
+# ==============================================================================
+_PBKDF2_ITERS = 200_000
+
+def hash_password(password):
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), _PBKDF2_ITERS).hex()
+    return f"pbkdf2${_PBKDF2_ITERS}${salt}${digest}"
+
+def _check_password(password, stored):
+    if stored.startswith("pbkdf2$"):
+        _, iters, salt, digest = stored.split("$")
+        calc = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), int(iters)).hex()
+        return hmac.compare_digest(calc, digest)
+    # 舊版明碼資料：比對成功後由呼叫端升級為雜湊
+    return hmac.compare_digest(password, stored)
+
+def init_users_table():
+    """建立 users 表；若無任何帳號且設定了 ADMIN_PASSWORD，則建立初始 admin。"""
+    with DBConnection() as (conn, cursor):
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username VARCHAR(50) PRIMARY KEY,
+                password_hash VARCHAR(255) NOT NULL,
+                role VARCHAR(20) NOT NULL DEFAULT 'staff',
+                real_name VARCHAR(50) NOT NULL DEFAULT ''
+            )
+        """)
+        cursor.execute("SELECT COUNT(*) AS c FROM users")
+        admin_pwd = os.getenv("ADMIN_PASSWORD")
+        if cursor.fetchone()['c'] == 0 and admin_pwd:
+            cursor.execute(
+                "INSERT INTO users (username, password_hash, role, real_name) VALUES ('admin', %s, 'admin', '管理員')",
+                (hash_password(admin_pwd),)
+            )
+
+def verify_user(username, password):
+    """驗證帳密，成功回傳 {username, role, real_name}，失敗回傳 None。"""
+    with DBConnection() as (conn, cursor):
+        cursor.execute("SELECT username, password_hash, role, real_name FROM users WHERE username=%s", (username,))
+        row = cursor.fetchone()
+        if not row or not _check_password(password, row['password_hash']):
+            return None
+        if not row['password_hash'].startswith("pbkdf2$"):
+            cursor.execute("UPDATE users SET password_hash=%s WHERE username=%s", (hash_password(password), username))
+        return {k: row[k] for k in ('username', 'role', 'real_name')}

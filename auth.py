@@ -1,24 +1,17 @@
 import streamlit as st
-import pymysql
+import db_manager
 import time
 
 def verify_user_credentials(username, password, db_config, db_connected):
-    """連線資料庫驗證帳號密碼，防禦性回傳使用者角色"""
+    """透過連線池驗證帳號密碼（雜湊比對），回傳使用者資訊或 None"""
     if not db_connected:
         st.error("🔴 資料庫未連線，無法驗證權限！")
         return None
     try:
-        conn = pymysql.connect(**db_config)
-        cursor = conn.cursor()
-        # 透過 SQL 參數化查詢，完美防禦 SQL Injection 攻擊
-        sql = "SELECT username, role, real_name FROM users WHERE username=%s AND password_hash=%s"
-        cursor.execute(sql, (username, password))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return user
+        return db_manager.verify_user(username, password)
     except Exception as e:
-        st.error(f"🔑 權限資料庫查詢異常: {e}")
+        print(f"auth query failed: {e}")
+        st.error("🔑 權限資料庫查詢異常，請稍後再試")
         return None
 
 def render_login_interface(db_config, db_connected):

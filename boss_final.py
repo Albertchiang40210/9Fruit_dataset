@@ -54,6 +54,7 @@ FRUIT_CH_NAMES = {
 import os # 確保最上面有 import os
 
 # 1. 檢查資料庫連線
+db_manager.init_db()
 db_connected = db_manager.check_db_connected()
 
 def fetch_real_products():
@@ -72,6 +73,7 @@ def fetch_today_revenue():
 # ==============================================================================
 # 🔄 核心狀態機同步讀取
 # ==============================================================================
+if db_connected:
     DB_PRODUCTS = fetch_real_products()
     DB_LOGS = fetch_real_logs()
     TODAY_REVENUE = fetch_today_revenue()
@@ -126,7 +128,7 @@ if is_mobile_client:
                     try:
                         # 🚨 關鍵修正：將原本的 None 改為空字串 ""，完美通過 FastAPI 的 Pydantic 422 嚴格驗證
                         payload = {"image": base64_image, "member_phone": ""}
-                        api_key = os.getenv("API_KEY", "REDACTED")
+                        api_key = os.getenv("API_KEY", "")
                         headers = {"X-API-Key": api_key}
                         res = requests.post(FASTAPI_API_URL, json=payload, headers=headers, timeout=15)
                         
@@ -189,7 +191,7 @@ else:
                     nparr = np.frombuffer(image_blob_data, np.uint8); img_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                     st.image(cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB), caption="🛸 YOLOv8 實時特徵標記畫面", use_container_width=True)
                 else:
-                    NGROK_BASE_URL = os.getenv("NGROK_URL", "https://your-domain.ngrok-free.dev")
+                    NGROK_BASE_URL = os.getenv("NGROK_URL", "http://localhost:8501")
                     TARGET_MOBILE_URL = f"{NGROK_BASE_URL}?client=mobile"
                     qr_api = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={TARGET_MOBILE_URL}"
                     st.markdown(f"<div style='text-align:center; padding: 40px 0;'><img src='{qr_api}'/><h3 style='margin-top:20px;'>🛒 請用手機掃碼開始拍照結帳</h3></div>", unsafe_allow_html=True)

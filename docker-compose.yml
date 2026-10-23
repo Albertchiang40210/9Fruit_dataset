@@ -7,11 +7,11 @@ services:
     container_name: fruit_mysql
     restart: "no"
     environment:
-      MYSQL_ROOT_PASSWORD: REDACTED
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?請在 .env 設定 DB_PASSWORD}
       MYSQL_DATABASE: fruit_store
       TZ: Asia/Taipei                      # 👈 注意：沒有橫線！冒號後面有一個空格
     ports:
-      - "3307:3306"
+      - "127.0.0.1:3307:3306"
     volumes:
       - fruit_db_data:/var/lib/mysql
 
@@ -25,7 +25,6 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: mysql+pymysql://root:REDACTED@fruit_db:3306/fruit_store  # 👈 順便把橫線拿掉，改成冒號
       TZ: Asia/Taipei                      # 👈 沒有橫線，跟上面對齊
     depends_on:
       - fruit_db

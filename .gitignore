@@ -1,5 +1,19 @@
+# Secrets
 .env
+.env.*
+!.env.example
+ngrok_config.yml
+
+# Python / env
 .venv/
 __pycache__/
-result/
+*.pyc
+
+# Models, outputs, caches
 *.pt
+result/
+runs/
+labels/*.cache
+
+# macOS
+.DS_Store

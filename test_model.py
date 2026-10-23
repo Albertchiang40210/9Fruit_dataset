@@ -4,7 +4,7 @@ from ultralytics import YOLO
 def main():
     # 👑 召喚你剛剛熱騰騰練出來的 YOLO26 水果神腦！
     # 注意：YOLO 訓練完最聰明的權重會自動存放在這裡，如果等一下資料夾名稱有變，我們再微調
-    model = YOLO('/Users/albert/Documents/Fruit classification dataset/result/train-7/weights/best.pt')
+    model = YOLO('result/train-5/weights/best.pt')
     
     print("🚀 YOLO26 水果神腦已成功裝載！準備開始期末考...")
 

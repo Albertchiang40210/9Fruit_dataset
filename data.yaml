@@ -1,5 +1,6 @@
-train: /Users/albert/Documents/Fruit classification dataset/images/train
-val: /Users/albert/Documents/Fruit classification dataset/images/val
+path: .
+train: images/train
+val: images/val
 
 nc: 9  # 🚀 阿伯真正的 9 種水果大軍！
 
