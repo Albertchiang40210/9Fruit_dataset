@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 # 以 --build-arg REQUIREMENTS=requirements-web.txt 可建置不含 YOLO/torch 的輕量前端映像檔
 ARG REQUIREMENTS=requirements-api.txt

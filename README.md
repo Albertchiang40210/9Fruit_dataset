@@ -1,6 +1,6 @@
 # 🍎 AI Smart Retail: 9-Class Fruit Recognition & Automated Checkout
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![YOLO](https://img.shields.io/badge/AI-YOLO26%20%2F%20Ultralytics-green)](https://github.com/ultralytics/ultralytics)
 [![MySQL](https://img.shields.io/badge/Database-MySQL%208-orange)](https://www.mysql.com/)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-red)](https://fastapi.tiangolo.com/)
