@@ -17,7 +17,10 @@ services:
 
   # 2. 後端大腦
   fruit_backend:
-    build: .
+    build:
+      context: .
+      args:
+        REQUIREMENTS: requirements-api.txt
     container_name: fruit_api_service
     restart: "no"
     ports:
@@ -25,13 +28,18 @@ services:
     env_file:
       - .env
     environment:
-      TZ: Asia/Taipei                      # 👈 沒有橫線，跟上面對齊
+      TZ: Asia/Taipei
+    volumes:
+      - ./result:/app/result:ro            # 模型權重（YOLO_MODEL_PATH 需指向此處，例如 result/train-5/weights/best.pt）
     depends_on:
       - fruit_db
 
 # 3. 前端網頁
   fruit_web:
-    build: .
+    build:
+      context: .
+      args:
+        REQUIREMENTS: requirements-web.txt
     container_name: fruit_streamlit_ui
     restart: "no"
     ports:

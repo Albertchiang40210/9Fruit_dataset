@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+ngrok_config.yml
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+.DS_Store
+images
+labels
+result/train-*/*.png
+result/predict
+tests
+runs
+README.md

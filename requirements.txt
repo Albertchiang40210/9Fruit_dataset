@@ -1,13 +1,3 @@
-fastapi
-uvicorn
-numpy
-pydantic
-pymysql
-ultralytics
-opencv-python-headless
-python-dotenv
-streamlit
-pandas
-requests
-DBUtils
-plotly
+# 本機開發：安裝全部（Docker 會分別使用 requirements-api.txt / requirements-web.txt）
+-r requirements-api.txt
+-r requirements-web.txt

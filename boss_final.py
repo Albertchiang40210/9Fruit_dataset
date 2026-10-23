@@ -216,7 +216,8 @@ else:
                     if current_cart and final_total > 0:
                         if btn_col1.button("🏁 確認結帳並列印發票", use_container_width=True, type="primary"):
                             if db_connected:
-                                db_manager.process_checkout(current_cart, pay_method)
+                                if db_manager.process_checkout(pay_method) is None:
+                                    st.warning("此筆購物車已被結帳或已清空。"); time.sleep(1); st.rerun()
                             st.balloons(); st.success("🎉 交易成功！"); time.sleep(1.2); st.rerun()
                     else:
                         btn_col1.button("🏁 無法結帳", use_container_width=True, disabled=True)
@@ -300,9 +301,10 @@ else:
             if st.session_state.user_role == "admin":
                 with st.container(border=True):
                     st.markdown("<h3 style='color:#c0392b; margin-top:0;'>🚨 門市閉店交班重置面板</h4>", unsafe_allow_html=True)
-                    if st.button("🔄 盤點歸零：重置今日營業額", use_container_width=True, type="secondary"):
+                    confirm_reset = st.checkbox("我確定要刪除今日所有交易紀錄（無法復原）", key="confirm_reset_revenue")
+                    if st.button("🔄 盤點歸零：重置今日營業額", use_container_width=True, type="secondary", disabled=not confirm_reset):
                         if db_connected:
-                            db_manager.reset_today_revenue()
+                            db_manager.reset_today_revenue(st.session_state.get("real_name") or "admin")
                             st.toast("🧹 今日營業額已重置歸零！"); time.sleep(0.5); st.rerun()
             
             st.markdown("<br>", unsafe_allow_html=True)

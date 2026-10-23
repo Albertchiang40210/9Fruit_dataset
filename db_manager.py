@@ -150,28 +150,39 @@ def update_product_stock(name, new_stock):
     with DBConnection() as (conn, cursor):
         cursor.execute("UPDATE products SET stock=%s WHERE name=%s", (new_stock, name))
 
-def process_checkout(cart, pay_method):
+def process_checkout(pay_method):
+    """結帳：在單一交易內鎖定 system_sync，以資料庫中凍結的購物車為準（不信任前端傳入）。
+    回傳 total_due；若目前沒有待結帳的購物車（例如已被結帳）則回傳 None。"""
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with DBConnection() as (conn, cursor):
-        # 1. 更新庫存 & 寫入 logs
+        cursor.execute("SELECT is_frozen, cart_json FROM system_sync WHERE sync_key='main' FOR UPDATE")
+        row = cursor.fetchone()
+        if not row or not row['is_frozen']:
+            return None
+        cart = json.loads(row['cart_json'] or '{}')
+        if not cart:
+            return None
+
+        total_due = 0
         for fk, fq in cart.items():
             cursor.execute("UPDATE products SET stock = GREATEST(stock - %s, 0) WHERE name = %s", (fq, fk))
-            
             cursor.execute("SELECT price FROM products WHERE name = %s", (fk,))
-            row = cursor.fetchone()
-            price = row['price'] if row else 0
-            single_item_total = price * fq
-            
-            log_note = f"金額:${single_item_total} | 管道:{pay_method}"
+            price_row = cursor.fetchone()
+            item_total = (price_row['price'] if price_row else 0) * fq
+            total_due += item_total
             cursor.execute(
                 "INSERT INTO stock_logs (timestamp, name, action_type, qty, note) VALUES (%s, %s, %s, %s, %s)",
-                (now_time, fk, '📤 交易完成', f"-{fq}", log_note)
+                (now_time, fk, '📤 交易完成', f"-{fq}", f"金額:${item_total} | 管道:{pay_method}")
             )
-            
-        # 2. 解凍大螢幕
+
+        cursor.execute(
+            "INSERT INTO transactions (timestamp, items_json, total_due, cash_paid, change_given) VALUES (%s, %s, %s, %s, 0)",
+            (now_time, json.dumps(cart), total_due, total_due)
+        )
         cursor.execute(
             "UPDATE system_sync SET is_frozen=0, cart_json='{}', total_due=0, image_blob=NULL WHERE sync_key='main'"
         )
+        return total_due
 
 def reset_system_sync():
     with DBConnection() as (conn, cursor):
@@ -197,28 +208,28 @@ def get_today_revenue():
     today_str = datetime.now().strftime("%Y-%m-%d")
     with DBConnection() as (conn, cursor):
         cursor.execute(
-            "SELECT note FROM stock_logs WHERE timestamp LIKE %s AND action_type='📤 交易完成'",
-            (f"{today_str}%",)
+            "SELECT COALESCE(SUM(total_due), 0) AS revenue FROM transactions WHERE timestamp >= %s AND timestamp < %s + INTERVAL 1 DAY",
+            (today_str, today_str)
         )
-        rows = cursor.fetchall()
-        
-    calculated_revenue = 0
-    for row in rows:
-        note_str = row['note']
-        if "金額:$" in note_str:
-            try:
-                part = note_str.split("金額:$")[1]
-                price_val = int(part.split(" |")[0])
-                calculated_revenue += price_val
-            except: pass
-    return calculated_revenue
+        return int(cursor.fetchone()['revenue'])
 
-def reset_today_revenue():
+def reset_today_revenue(operator="unknown"):
+    """刪除今日交易紀錄（營收歸零），並寫入稽核日誌。"""
     today_str = datetime.now().strftime("%Y-%m-%d")
     with DBConnection() as (conn, cursor):
         cursor.execute(
-            "DELETE FROM stock_logs WHERE timestamp LIKE %s AND action_type='📤 交易完成'",
-            (f"{today_str}%",)
+            "SELECT COUNT(*) AS c, COALESCE(SUM(total_due), 0) AS s FROM transactions WHERE timestamp >= %s AND timestamp < %s + INTERVAL 1 DAY",
+            (today_str, today_str)
+        )
+        info = cursor.fetchone()
+        cursor.execute(
+            "DELETE FROM transactions WHERE timestamp >= %s AND timestamp < %s + INTERVAL 1 DAY",
+            (today_str, today_str)
+        )
+        cursor.execute(
+            "INSERT INTO stock_logs (timestamp, name, action_type, qty, note) VALUES (%s, %s, %s, %s, %s)",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), '-', '🚨 營收重置', '-',
+             f"操作者:{operator} | 清除 {info['c']} 筆交易，共 ${info['s']}")
         )
 
 def get_system_sync():

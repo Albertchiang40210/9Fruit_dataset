@@ -17,3 +17,4 @@ labels/*.cache
 
 # macOS
 .DS_Store
+.pytest_cache/
